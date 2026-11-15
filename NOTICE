@@ -1,0 +1,26 @@
+Cardputer Mic
+=============
+
+把 [Passport Mic](https://github.com/MatchlessHeroHx/ai-passport-mic) 蓝牙语音话筒
+移植到 M5Stack Cardputer ADV 的二次开发。
+
+上游与许可
+----------
+- 上游固件：MatchlessHeroHx/ai-passport-mic（MIT），基线提交
+  143a22a "chore: publish only what Passport Mic needs"。
+  上游仓库：https://github.com/MatchlessHeroHx/ai-passport-mic
+- 上游产品固件：FoloToy/ai-passport（MIT），上游仓库：https://github.com/FoloToy/ai-passport
+- 原始 MIT 许可文本见 LICENSE。
+
+沿用与改动
+----------
+- 零改动沿用：FPM1 帧协议（main/mic_protocol.*）、IMA ADPCM（main/mic_adpcm.*）、
+  屏幕省电状态机（main/mic_screen.*）、BLE GATT 实现（main/mic_ble.*，仅改广播名）。
+- 按 ESP32-S3 / Cardputer ADV 硬件重写：BSP 引脚、I2C、音频、显示、键盘、电量、UI。
+- Mac 端 companion（../ai-passport-doubao-mic/companion/）保持零改动，本工程不复制其
+  运行程序；tests/ref/ 下的 protocol.py / adpcm.py 只是协议参考实现，供 host tests 使用。
+
+设计依据
+--------
+../.context/cardputer-adv-mic-handoff.zh_CN.md（交接文档）
+../.context/cardputer-adv-mic-plan-a.zh_CN.md（方案 A 完整细化）
