@@ -1,13 +1,10 @@
 # Cardputer Mic（Cardputer 蓝牙话筒）
 
-**English** · [简体中文](README.zh_CN.md)
+[English](README.md) · **简体中文**
 
 把 [Passport Mic](https://github.com/MatchlessHeroHx/ai-passport-mic) 蓝牙语音话筒
 移植到 M5Stack Cardputer ADV 的固件（上游 MIT）。BLE 协议与 Mac 端 companion
 零改动：`BLE → BlackHole 2ch → 豆包输入法`。
-
-**状态：可日常使用（P0–P4 全部完成）。** 核心功能已在真机验收。上游归属见
-[NOTICE](NOTICE)。
 
 ## 功能
 
@@ -24,11 +21,11 @@
 电量百分比采用库仑计数估算（NVS 持久化，精度 ±10~15%），显示在右上角。
 插 USB-C 充电 1.5 小时后自动校准到 100%。
 
-## 硬件事实
+## 硬件
 
 Stamp-S3A / ESP32-S3FN8，8 MB Flash，**无 PSRAM**，240×135 ST7789V2，
-56 键 TCA8418，ES8311 + NS4150B。GPIO10 上的电池 SAR ADC 在这块板
-**不可用**（模拟域与 BT PHY / USB-JTAG 共享，init 后毫秒级失真），
+56 键 TCA8418，ES8311 + NS4150B，1500 mAh 电池。GPIO10 上的电池 SAR ADC
+在这块板**不可用**（模拟域与 BT PHY、USB-JTAG 共享，init 后毫秒级失真），
 改用软件库仑计数估算电量。
 
 权威引脚表在 [`components/bsp/include/bsp_pins.h`](components/bsp/include/bsp_pins.h)，
@@ -40,10 +37,13 @@ TCA8418 INT `G11`；`G38` 为 `DISP_BL` 兼 RGB LED `PWR_EN`。
 
 ## 构建
 
+需要 ESP-IDF v5.5.3。
+
 ```bash
 source ~/esp/esp-idf/export.sh
 ./tools/validate.sh --static      # host 测试，无需工具链
-./tools/validate.sh --firmware    # ESP-IDF 5.5.3 构建 + 合并 0x0 镜像
+./tools/validate.sh --firmware    # 构建 + 合并 0x0 镜像
+./tools/validate.sh               # 完整门禁（静态 + 固件）
 ```
 
 ## 烧录
@@ -58,25 +58,28 @@ python -m esptool --chip esp32s3 -p /dev/cu.usbmodemXXXXX -b 460800 \
 
 预构建合并镜像在 [`firmware/`](firmware/) 目录。
 
-## 验证
+## 目录结构
 
-```bash
-./tools/validate.sh               # 完整门禁（静态 + 固件）
+```text
+components/bsp/    板级支持：引脚、I2C、音频、显示、键盘、按键映射
+main/              应用层：状态机、UI、BLE、协议、电量模型
+tests/             host 测试：按键映射、协议、UI 渲染、ADPCM、电量 SOC
+tools/             验证门禁、字体生成、UI 预览、BLE 探针
+firmware/          预构建合并镜像
 ```
-
-真机验收已完成：
-- BLE 配对 / 连接 / 配对码流程
-- 10×30 秒连续听写（0 序列断档 / 0 CRC 错误）
-- 3 轮断连恢复（最差 1.84 秒回到 READY）
-- 三档拾音距离测试（1/5/15 cm，无削波）
-- companion 菜单栏端到端听写上屏
-- 库仑计数电量显示（NVS 持久化 + USB 充电校准）
 
 ## 已知限制
 
-- **电量精度 ±10~15%**（库仑计数估算；本板 SAR ADC 硬件不可用于电压测量）
+- **电量精度 ±10~15%**——库仑计数估算；本板 SAR ADC 硬件不可用于电压测量
 - 无 LE Audio / 原生蓝牙麦克风 Profile（ESP32-S3 在 ESP-IDF 5.5.3 不支持），
-  需要 Mac 端 companion
+  必须配合 Mac 端 companion
 - USB-C 仅供电 + 烧录（无 USB Audio Class）
 - `G43`（I2S LRCK）与 UART0 TX 冲突，必须 `CONFIG_ESP_CONSOLE_NONE`——
   串口日志因设计关闭
+
+## 致谢
+
+上游固件与协议来自
+[MatchlessHeroHx/ai-passport-mic](https://github.com/MatchlessHeroHx/ai-passport-mic)
+与 [FoloToy/ai-passport](https://github.com/FoloToy/ai-passport)，均为 MIT。
+详见 [NOTICE](NOTICE)。
