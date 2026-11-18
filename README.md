@@ -19,17 +19,18 @@ the Mac companion, which feeds it to Doubao IME for speech-to-text.
 | **Fn** (middle) | Confirm / Enter |
 | **Tab** (top) | Undo last transcription |
 
-Battery percentage is estimated by coulomb counting (NVS-persisted, ±10–15%
-accuracy) and shown in the top-right corner. Charge for 1.5 h via USB-C to
-auto-calibrate to 100%.
+Battery percentage is a software estimate shown in the top-right corner.
+Active use drains it; leaving the device idle with the screen off for 15 minutes
+is treated as charging, and about 2 hours of accumulated idle time calibrates it
+to 100%. No voltage sensing is involved.
 
 ## Hardware
 
 Stamp-S3A / ESP32-S3FN8, 8 MB Flash, **no PSRAM**, 240×135 ST7789V2, 56-key
 TCA8418, ES8311 + NS4150B, 1500 mAh battery. The battery SAR ADC on GPIO10 is
 **unusable** on this board (analog domain shared with the BT PHY and USB-JTAG;
-readings degrade within milliseconds of init), so battery level is estimated by
-software coulomb counting instead.
+readings degrade within milliseconds of init). The battery level is therefore a
+software estimate (NVS-persisted mAh drain/restore model), not a measurement.
 
 The authoritative pin table lives in
 [`components/bsp/include/bsp_pins.h`](components/bsp/include/bsp_pins.h) and is
@@ -61,7 +62,8 @@ python -m esptool --chip esp32s3 -p /dev/cu.usbmodemXXXXX -b 460800 \
   0x0 build/cardputer-mic-full.bin
 ```
 
-A pre-built merged image is in [`firmware/`](firmware/).
+A pre-built merged image is in [`firmware/`](firmware/); the latest is
+`cardputer-mic-v1.1.0.bin`.
 
 ## Project layout
 
@@ -70,13 +72,18 @@ components/bsp/    Board support: pins, I2C, audio, display, keyboard, keymap
 main/              Application: state machine, UI, BLE, protocol, battery model
 tests/             Host tests: keymap, protocol, UI render, ADPCM, battery SOC
 tools/             Validation gate, font generation, UI preview, BLE probes
-firmware/          Pre-built merged image
+firmware/          Pre-built merged images (v1.0.0, v1.1.0)
 ```
 
 ## Known limitations
 
-- **Battery percentage accuracy is ±10–15%** — coulomb-counting estimate; the
-  SAR ADC hardware is unusable for voltage measurement on this board.
+- **Battery percentage is a rough estimate, not a measurement** — the SAR ADC
+  hardware is unusable for voltage sensing on this board. Charging is inferred
+  from idle time rather than a USB signal, so leaving the device idle without a
+  charger can still raise the displayed value.
+- USB connection is not detected reliably: `usb_serial_jtag_is_connected()`
+  monitors host SOF packets, which wall chargers never send and macOS may stop
+  when the port is suspended.
 - No LE Audio or native Bluetooth microphone profile (not supported by the
   ESP32-S3 in ESP-IDF 5.5.3); the Mac companion app is required.
 - USB-C is charge-only plus flashing (no USB Audio Class).

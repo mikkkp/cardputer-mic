@@ -8,12 +8,18 @@
 //
 // 原理：
 //   · NVS 持久化剩余容量（mAh），跨重启保持。
-//   · 纯电池运行：按估算电流消耗 mAh（录音 > 常亮 > 待机三档）。
-//   · USB 在场：视为充电中，按充电电流回充 mAh，到满截止。
-//   · USB 插满超过 CHG_HOLD_S 秒 → 校准到满容量（TP4057 CV 段进入 trickle）。
+//   · 活跃使用（亮屏/录音）：按估算电流扣减 mAh（录音 > 常亮 > 待机三档）。
+//   · 充电判定（2026-11-18 v2）：不用 USB 信号。usb_serial_jtag_is_connected()
+//     检测的是主机 SOF 帧包，充电头/充电宝不是 USB 主机（无 SOF），插 Mac 也
+//     常因端口挂起无 SOF，实测恒 false → 充电从不累计。改为「静默推断」：
+//     屏幕熄灭且未录音连续超过 QUIET_ASSUME_CHARGE_S 秒 → 认为设备放在
+//     充电器上（用户使用习惯：不在手里用的时候基本都在充电），按充电电流
+//     回充；累计回充超过 CHG_HOLD_S 秒 → 校准到满容量。
+//     已知误差：长时间熄屏搁置（未插电）也会被当作充电，电量会偏高；
+//     用户充电频率高，接受此折中。
 //
-// 精度：±10~15% 量级，取决于实际电流与标称 1500mAh 的偏差。
-// 显示语义：0..100 有效百分比；USB 在场且未判满时 UI 侧仍用插头图标。
+// 精度：软件推断，仅供显示参考。
+// 显示语义：0..100 有效百分比。
 #ifndef MIC_BATTERY_MODEL_H
 #define MIC_BATTERY_MODEL_H
 
@@ -24,10 +30,10 @@
 void mic_battery_model_init(void);
 
 // 主循环驱动：每秒调用一次。
-//   usb_connected = usb_serial_jtag_is_connected()
-//   recording     = 当前处于录音状态
-//   screen_on     = 屏幕非 OFF（DIM 也算，背光只剩漏电流时用 false）
-void mic_battery_model_tick(bool usb_connected, bool recording, bool screen_on);
+//   recording = 当前处于录音状态
+//   screen_on = 屏幕非 OFF（DIM 也算亮屏）
+// 充电判定在模型内部：熄屏静置 ≥ QUIET_ASSUME_CHARGE_S 视为充电中。
+void mic_battery_model_tick(bool recording, bool screen_on);
 
 // SOC 0..100；异常返回 -1。
 int mic_battery_model_soc(void);

@@ -18,15 +18,15 @@
 | **Fn**（中间） | 回车 / 确认 |
 | **Tab**（最上） | 撤销上次听写 |
 
-电量百分比采用库仑计数估算（NVS 持久化，精度 ±10~15%），显示在右上角。
-插 USB-C 充电 1.5 小时后自动校准到 100%。
+电量百分比是软件估算值，显示在右上角。亮屏使用会扣减；熄屏静置 15 分钟后
+视为在充电，累计约 2 小时后自动校准到 100%。整个过程不测量电压。
 
 ## 硬件
 
 Stamp-S3A / ESP32-S3FN8，8 MB Flash，**无 PSRAM**，240×135 ST7789V2，
 56 键 TCA8418，ES8311 + NS4150B，1500 mAh 电池。GPIO10 上的电池 SAR ADC
 在这块板**不可用**（模拟域与 BT PHY、USB-JTAG 共享，init 后毫秒级失真），
-改用软件库仑计数估算电量。
+因此电量是软件估算值（NVS 持久化 mAh 扣减 / 回补模型），不是测量值。
 
 权威引脚表在 [`components/bsp/include/bsp_pins.h`](components/bsp/include/bsp_pins.h)，
 由 `tests/test_bsp_pins.py` 检查。
@@ -56,7 +56,8 @@ python -m esptool --chip esp32s3 -p /dev/cu.usbmodemXXXXX -b 460800 \
   0x0 build/cardputer-mic-full.bin
 ```
 
-预构建合并镜像在 [`firmware/`](firmware/) 目录。
+预构建合并镜像在 [`firmware/`](firmware/) 目录，最新为
+`cardputer-mic-v1.1.0.bin`。
 
 ## 目录结构
 
@@ -65,12 +66,15 @@ components/bsp/    板级支持：引脚、I2C、音频、显示、键盘、按�
 main/              应用层：状态机、UI、BLE、协议、电量模型
 tests/             host 测试：按键映射、协议、UI 渲染、ADPCM、电量 SOC
 tools/             验证门禁、字体生成、UI 预览、BLE 探针
-firmware/          预构建合并镜像
+firmware/          预构建合并镜像（v1.0.0、v1.1.0）
 ```
 
 ## 已知限制
 
-- **电量精度 ±10~15%**——库仑计数估算；本板 SAR ADC 硬件不可用于电压测量
+- **电量是粗略估算，不是测量值**——本板 SAR ADC 硬件不可用于电压测量；充电
+  由静置时长推断而非 USB 信号，因此没插充电器时长时间熄屏搁置也可能让显示值回升
+- **USB 连接无法可靠检测**：`usb_serial_jtag_is_connected()` 监控的是主机 SOF 帧包，
+  充电头不发 SOF，macOS 也可能在端口挂起时停发
 - 无 LE Audio / 原生蓝牙麦克风 Profile（ESP32-S3 在 ESP-IDF 5.5.3 不支持），
   必须配合 Mac 端 companion
 - USB-C 仅供电 + 烧录（无 USB Audio Class）

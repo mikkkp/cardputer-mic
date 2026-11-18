@@ -245,10 +245,9 @@ void app_main(void)
             last_battery = now;
         }
 
-        /* 库仑计数：每秒驱动一次，放电三档 / 充电回充。 */
+        /* 库仑计数：每秒驱动一次，放电三档 / 静默推断充电回充。 */
         if ((uint32_t)(now - last_bat_tick) >= 1000) {
-            mic_battery_model_tick(usb_serial_jtag_is_connected(),
-                                   model.state == MIC_RECORDING,
+            mic_battery_model_tick(model.state == MIC_RECORDING,
                                    screen.level != MIC_SCREEN_OFF);
             battery = battery_soc_probe();
             last_bat_tick = now;

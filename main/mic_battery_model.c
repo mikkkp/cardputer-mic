@@ -1,8 +1,13 @@
 // main/mic_battery_model.c
-// 库仑计数电量模型：NVS 持久化 + 三档电流消耗 + 充电回充 + 满电校准。
+// 库仑计数电量模型：NVS 持久化 + 三档电流消耗 + 静默推断充电 + 满电校准。
 //
 // NVS key: "mic" 命名空间 / "bat_mah" u32（剩余 mAh）。
-// 写入策略：电量变化 ≥1% 或充电状态切换时落盘，避免 NVS 磨损。
+// 写入策略：电量变化 ≥1% 或满电校准时落盘，避免 NVS 磨损。
+//
+// 充电判定（2026-11-18 v2）：usb_serial_jtag_is_connected() 检测 USB 主机
+// SOF 帧包，充电头/充电宝无 SOF、插 Mac 也常因端口挂起无 SOF，实测恒 false，
+// 导致充电从不累计（用户反馈：充几次电显示停在 50%）。本版改为静默推断：
+// 熄屏且未录音连续 ≥ QUIET_ASSUME_CHARGE_S 秒 → 视为在充电器上。
 #include "mic_battery_model.h"
 
 #include "esp_log.h"
@@ -25,8 +30,13 @@ static const char *TAG = "mic_bat";
 // 充电回充（TP4057 默认 500mA，扣掉运行电流后净充 ~350mA；保守取 300）。
 #define CUR_CHARGE_MA      300
 
-// 判满时间：USB 连续在场超过此秒数 → 校准到满（TP4057 满充 STDBY 后电池
-// 实际约 4.15~4.20V）。1.5h = 5400s。
+// 静默阈值：熄屏且未录音连续超过此秒数 → 视为设备在充电器上。
+// 15 分钟：短时揣兒/桌上待机不计，长时搁置（充电场景）计入。
+#define QUIET_ASSUME_CHARGE_S  900
+
+// 判满时间：累计回充超过此秒数 → 校准到满（TP4057 满充 STDBY 后电池
+// 实际约 4.15~4.20V）。1.5h = 5400s。加上静默阈值，从任意电量到 100%
+// 约 2 小时。累计值跨静默段保留（碎片化充电也能凑满），仅校准后清零。
 #define CHG_HOLD_S         5400
 
 // NVS 写入节流：电量变化超过此 mAh 才落盘（约 1%）。
@@ -67,39 +77,46 @@ void mic_battery_model_init(void)
              s_mah, BAT_CAPACITY_MAH, mic_battery_model_soc());
 }
 
-void mic_battery_model_tick(bool usb_connected, bool recording, bool screen_on)
+void mic_battery_model_tick(bool recording, bool screen_on)
 {
     static uint32_t s_ticks = 0;
     s_ticks++;
 
-    if (usb_connected) {
+    /* 静默计时：熄屏且未录音连续计时，任何亮屏/录音动作消零。 */
+    static uint32_t s_quiet_s = 0;
+    bool quiet = !recording && !screen_on;
+    if (quiet) {
+        if (s_quiet_s < QUIET_ASSUME_CHARGE_S) s_quiet_s++;
+    } else {
+        s_quiet_s = 0;
+    }
+    bool charging = quiet && s_quiet_s >= QUIET_ASSUME_CHARGE_S;
+
+    if (charging) {
         if (!s_chg_started) {
             s_chg_started = true;
-            s_chg_seconds = 0;
             s_full_calibrated = false;
         }
-        // 回充（mA * 1s / 3600 = mAh/s）
-        s_mah += CUR_CHARGE_MA / 3600;   // 整数运算：300/3600 = 0 每秒 → 需要累计
-        // 用 mAs 累计避免截断
+        // 回充（mA * 1s = mAs，满 3600 折 1 mAh，余数保留）
         static uint32_t s_chg_mAs = 0;
         s_chg_mAs += CUR_CHARGE_MA;
         if (s_chg_mAs >= 3600) {
             s_mah += s_chg_mAs / 3600;
             s_chg_mAs %= 3600;
+            if (s_mah > BAT_CAPACITY_MAH) s_mah = BAT_CAPACITY_MAH;
         }
         s_chg_seconds++;
 
-        // 满电校准
+        // 满电校准：累计回充时长的 CHG_HOLD_S → 钉到满容量
         if (!s_full_calibrated && s_chg_seconds >= CHG_HOLD_S) {
             s_mah = BAT_CAPACITY_MAH;
             s_full_calibrated = true;
+            s_chg_seconds = 0;
             nvs_flush();
-            ESP_LOGW(TAG, "充电 %us，校准到满", (unsigned)s_chg_seconds);
+            ESP_LOGW(TAG, "累计回充 %us，校准到满", (unsigned)CHG_HOLD_S);
         }
     } else {
         s_chg_started = false;
-        s_chg_seconds = 0;
-        s_full_calibrated = false;
 
         // 放电（三档电流取最大）
         int ma = CUR_IDLE_MA;
